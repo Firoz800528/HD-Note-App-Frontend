@@ -10,13 +10,23 @@ axios.defaults.withCredentials = true;
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => {
+    // ✅ load from localStorage on init
+    const stored = localStorage.getItem('user');
+    return stored ? JSON.parse(stored) : null;
+  });
 
   useEffect(() => {
     axios
-      .get('')
-      .then((r) => setUser(r.data.user))
-      .catch(() => setUser(null))
+      .get('/api/me')
+      .then((r) => {
+        setUser(r.data.user);
+        localStorage.setItem('user', JSON.stringify(r.data.user)); // ✅ persist to localStorage
+      })
+      .catch(() => {
+        setUser(null);
+        localStorage.removeItem('user'); // ✅ clear if invalid
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -26,15 +36,26 @@ export default function App() {
     <Routes>
       <Route
         path="/"
-        element={user ? <Navigate to="/app" /> : <SignIn onAuth={(u) => setUser(u)} />}
+        element={user ? <Navigate to="/app" /> : <SignIn onAuth={(u) => {
+          setUser(u);
+          localStorage.setItem('user', JSON.stringify(u)); // ✅ persist after login
+        }} />}
       />
       <Route
         path="/signup"
-        element={user ? <Navigate to="/app" /> : <SignUp onAuth={(u) => setUser(u)} />}
+        element={user ? <Navigate to="/app" /> : <SignUp onAuth={(u) => {
+          setUser(u);
+          localStorage.setItem('user', JSON.stringify(u)); // ✅ persist after signup
+        }} />}
       />
       <Route
         path="/app"
-        element={user ? <Dashboard user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" />}
+        element={user ? (
+          <Dashboard user={user} onLogout={() => {
+            setUser(null);
+            localStorage.removeItem('user'); // ✅ clear on logout
+          }} />
+        ) : <Navigate to="/" />}
       />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
