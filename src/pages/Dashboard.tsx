@@ -21,7 +21,9 @@ export default function Dashboard({ user, onLogout }: { user: any; onLogout: () 
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const createNote = async () => {
     setError('');
@@ -53,7 +55,7 @@ export default function Dashboard({ user, onLogout }: { user: any; onLogout: () 
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-4 space-y-6">
+    <div className="md:w-[62vw] mx-auto p-4 space-y-6">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-5">
           <img src={logo} alt="logo" />

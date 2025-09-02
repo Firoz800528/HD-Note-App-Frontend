@@ -1,181 +1,175 @@
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
-import axios from 'axios'
-import { Link } from 'react-router-dom'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
-import wallpaper from '../assets/wallpaper.png'
-import logo from '../assets/logo.png'
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import axios from 'axios';
+import { useNavigate, Link } from 'react-router-dom';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import wallpaper from '../assets/wallpaper.png';
+import logo from '../assets/logo.png';
+
+declare global {
+  interface Window { google: any; }
+}
 
 const formSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   dob: z.string().min(1, 'Date of birth is required'),
   email: z.string().email('Invalid email'),
-  code: z.string().optional(),
-})
-type FormData = z.infer<typeof formSchema>
+});
 
-export default function Login({ onAuth }: { onAuth: (u: any) => void }) {
-  const [otpSent, setOtpSent] = useState(false)
-  const [serverError, setServerError] = useState('')
-  const [showOtp, setShowOtp] = useState(false)
+const otpSchema = z.object({
+  code: z.string().min(6, 'OTP must be 6 digits').max(6, 'OTP must be 6 digits'),
+  email: z.string().email(),
+});
 
-  const form = useForm<FormData>({ resolver: zodResolver(formSchema) })
+type FormData = z.infer<typeof formSchema>;
+type OtpForm = z.infer<typeof otpSchema>;
 
-  const VITE_API_URL = import.meta.env.VITE_API_URL || ''
+export default function SignUp({ onAuth }: { onAuth: (u: any) => void }) {
+  const navigate = useNavigate();
+  const [otpSent, setOtpSent] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [showOtp, setShowOtp] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
 
-  const onRequestOtp = async (data: FormData) => {
-    setServerError('')
-    try {
-      await axios.post(
-        `${VITE_API_URL}/api/auth/request-otp`,
-        {
-          name: data.name,
-          dob: data.dob,
-          email: data.email,
+  const form = useForm<FormData>({ resolver: zodResolver(formSchema) });
+  const otpForm = useForm<OtpForm>({ resolver: zodResolver(otpSchema) });
+
+  const VITE_API_URL = import.meta.env.VITE_API_URL || '';
+  const VITE_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendTimer > 0) timer = setInterval(() => setResendTimer(prev => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [resendTimer]);
+
+  // Google Sign-In script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    document.body.appendChild(script);
+
+    const cleanup = () => document.body.removeChild(script);
+
+    script.onload = () => {
+      if (!window.google) return;
+
+      window.google.accounts.id.initialize({
+        client_id: VITE_GOOGLE_CLIENT_ID,
+        callback: async (res: any) => {
+          try {
+            const response = await axios.post(
+              `${VITE_API_URL}/api/auth/google`,
+              { token: res.credential },
+              { withCredentials: true }
+            );
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            onAuth(response.data.user);
+            navigate('/app');
+          } catch (err: any) {
+            setServerError(err.response?.data?.message || 'Google sign-up failed');
+          }
         },
-        { withCredentials: true }
-      )
-      setOtpSent(true)
-    } catch (e: any) {
-      setServerError(e.response?.data?.message || 'Failed to send OTP')
-    }
-  }
+      });
 
-  const onVerifyOtp = async (data: FormData) => {
-    setServerError('')
+      window.google.accounts.id.renderButton(
+        document.getElementById('google-button')!,
+        { theme: 'outline', size: 'large', width: '100%', text: 'signup_with' }
+      );
+
+      window.google.accounts.id.prompt();
+    };
+
+    return cleanup;
+  }, [onAuth, navigate, VITE_API_URL, VITE_GOOGLE_CLIENT_ID]);
+
+  const requestOtp = async (data: FormData) => {
+    setServerError('');
     try {
-      const res = await axios.post(`${VITE_API_URL}/api/auth/verify-otp`, data, {
-        withCredentials: true,
-      })
-      onAuth(res.data.user)
+      await axios.post(`${VITE_API_URL}/api/auth/request-otp`, data, { withCredentials: true });
+      otpForm.setValue('email', data.email);
+      setOtpSent(true);
     } catch (e: any) {
-      setServerError(e.response?.data?.message || 'Verification failed')
+      setServerError(e.response?.data?.message || 'Failed to send OTP');
     }
-  }
+  };
 
-  // Floating Input Component
-  const FloatingInput = ({
-    label,
-    type = 'text',
-    register,
-    error,
-    children,
-  }: {
-    label: string
-    type?: string
-    register: any
-    error?: string
-    children?: React.ReactNode
-  }) => (
-    <div className="relative w-full my-1">
-      <input
-        type={type}
-        placeholder=" "
-        {...register}
-        className={`peer w-full border rounded-lg px-3 pt-1 pb-1 focus:outline-none focus:ring-1 focus:ring-blue-600 ${
-          error ? 'border-red-500' : 'border-gray-300'
-        }`}
-      />
-      <label className="absolute left-3 -top-3 bg-white px-1 text-sm text-gray-400 transition-all duration-200 peer-focus:text-blue-600">
-        {label}
-      </label>
-      {children}
-      {error && <p className="text-red-600 text-sm mt-1">{error}</p>}
-    </div>
-  )
+  const verifyOtp = async (data: OtpForm) => {
+    setServerError('');
+    try {
+      const res = await axios.post(`${VITE_API_URL}/api/auth/verify-otp`, data, { withCredentials: true });
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      onAuth(res.data.user);
+      navigate('/app');
+    } catch (e: any) {
+      setServerError(e.response?.data?.message || 'OTP verification failed');
+    }
+  };
+
+  const resendOtp = async () => {
+    setServerError('');
+    try {
+      const email = otpForm.getValues('email');
+      await axios.post(`${VITE_API_URL}/api/auth/request-otp`, { email }, { withCredentials: true });
+      setResendTimer(15);
+    } catch (e: any) {
+      setServerError(e.response?.data?.message || 'Failed to resend OTP');
+    }
+  };
 
   return (
     <div className="h-screen md:w-[62vw] sm:w-full mx-auto bg-white md:border border-gray-400 md:rounded-2xl flex flex-col md:flex-row overflow-hidden relative">
-      {/* Logo */}
       <Link to="/" className="absolute md:top-4 md:left-4 top-4 left-1/2 -translate-x-1/2 md:translate-x-0">
         <img src={logo} alt="Logo" className="h-6" />
       </Link>
 
-      {/* Left side - Form */}
       <div className="flex flex-col justify-center mt-3 pt-10 md:pt-0 md:p-12 max-w-md mx-auto">
-        <h2 className="text-2xl text-center md:text-start text-[#232323] font-bold mb-1">
-          Sign up
-        </h2>
-        <p className="text-[#969696] text-center md:text-start text-sm mb-5">
-          Sign up to enjoy the features on HD
-        </p>
+        <h2 className="text-2xl text-center md:text-start text-[#232323] font-bold mb-1">Sign Up</h2>
+        <p className="text-[#969696] text-sm mb-5 text-center md:text-start">Create your account to continue</p>
 
-        {/* Unified Form */}
-        <form
-          className="space-y-4"
-          onSubmit={
-            otpSent ? form.handleSubmit(onVerifyOtp) : form.handleSubmit(onRequestOtp)
-          }
-        >
-          <FloatingInput
-            label="Your Name"
-            register={form.register('name')}
-            error={form.formState.errors.name?.message}
-          />
-          <FloatingInput
-            label="Date of Birth"
-            type="date"
-            register={form.register('dob')}
-            error={form.formState.errors.dob?.message}
-          />
-          <FloatingInput
-            label="Email"
-            type="email"
-            register={form.register('email')}
-            error={form.formState.errors.email?.message}
-          />
+        {!otpSent ? (
+          <form className="space-y-4" onSubmit={form.handleSubmit(requestOtp)}>
+            <div className="flex flex-col space-y-2">
+              <input {...form.register('name')} placeholder="Name" className="border rounded-lg px-3 py-2" />
+              {form.formState.errors.name && <p className="text-red-600 text-sm">{form.formState.errors.name.message}</p>}
 
-          {otpSent && (
-            <FloatingInput
-              label="OTP Code"
-              type={showOtp ? 'text' : 'password'}
-              register={form.register('code')}
-              error={form.formState.errors.code?.message}
-            >
-              <button
-                type="button"
-                onClick={() => setShowOtp(!showOtp)}
-                className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
-              >
-                {showOtp ? (
-                  <EyeSlashIcon className="h-5 w-5" />
-                ) : (
-                  <EyeIcon className="h-5 w-5" />
-                )}
-              </button>
-            </FloatingInput>
-          )}
+              <input {...form.register('dob')} type="date" placeholder="Date of Birth" className="border rounded-lg px-3 py-2" />
+              {form.formState.errors.dob && <p className="text-red-600 text-sm">{form.formState.errors.dob.message}</p>}
 
-          {serverError && <p className="text-red-600 text-sm">{serverError}</p>}
+              <input {...form.register('email')} type="email" placeholder="Email" className="border rounded-lg px-3 py-2" />
+              {form.formState.errors.email && <p className="text-red-600 text-sm">{form.formState.errors.email.message}</p>}
+            </div>
 
-          <button
-            type="submit"
-            className="w-full rounded-lg font-semibold text-sm bg-blue-500 text-white py-2 hover:bg-blue-700 transition"
-          >
-            {otpSent ? 'Sign Up' : 'Get OTP'}
-          </button>
-        </form>
+            {serverError && <p className="text-red-600 text-sm">{serverError}</p>}
 
-        <p className="text-sm text-gray-500 mt-6 text-center">
-          Already have an account?{' '}
-          <Link to="/signin" className="text-blue-600 hover:underline">
-            Sign in
-          </Link>
-        </p>
+            <button type="submit" className="w-full rounded-lg font-semibold text-sm bg-blue-500 text-white py-2 hover:bg-blue-700 transition">Get OTP</button>
+          </form>
+        ) : (
+          <form className="space-y-4" onSubmit={otpForm.handleSubmit(verifyOtp)}>
+            <input {...otpForm.register('code')} placeholder="OTP Code" className="border rounded-lg px-3 py-2" />
+            {otpForm.formState.errors.code && <p className="text-red-600 text-sm">{otpForm.formState.errors.code.message}</p>}
+
+            {serverError && <p className="text-red-600 text-sm">{serverError}</p>}
+
+            <button type="button" onClick={resendOtp} disabled={resendTimer > 0} className={`text-sm ${resendTimer > 0 ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:underline'}`}>
+              {resendTimer > 0 ? `Resend OTP in ${resendTimer}s` : 'Resend OTP'}
+            </button>
+
+            <button type="submit" className="w-full rounded-lg font-semibold text-sm bg-blue-500 text-white py-2 hover:bg-blue-700 transition">Verify OTP</button>
+          </form>
+        )}
+
+        <div id="google-button" className="mt-3"></div>
       </div>
 
-      {/* Right side - Image */}
       <div className="hidden md:flex flex-1 items-center justify-center">
         <div className="w-full h-full rounded-3xl overflow-hidden">
-          <img
-            src={wallpaper}
-            alt="Background"
-            className="w-full h-full object-contain"
-          />
+          <img src={wallpaper} alt="Background" className="w-full h-full object-contain" />
         </div>
       </div>
     </div>
-  )
+  );
 }
