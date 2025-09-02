@@ -49,40 +49,47 @@ export default function SignIn({ onAuth }: { onAuth: (u: any) => void }) {
 
   // Google Sign-In script
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    document.body.appendChild(script);
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  document.body.appendChild(script);
 
-    const cleanup = () => document.body.removeChild(script);
+  script.onload = () => {
+    if (!window.google) return;
 
-    script.onload = () => {
-      if (!window.google) return;
-      window.google.accounts.id.initialize({
-        client_id: VITE_GOOGLE_CLIENT_ID,
-        callback: async (res: any) => {
-          try {
-            const response = await axios.post(
-              `${VITE_API_URL}/api/auth/google`,
-              { token: res.credential },
-              { withCredentials: true }
-            );
-            localStorage.setItem('user', JSON.stringify(response.data.user));
-            onAuth(response.data.user);
-            navigate('/app');
-          } catch (err: any) {
-            setServerError(err.response?.data?.message || 'Google sign-in failed');
-          }
-        },
-      });
-      window.google.accounts.id.renderButton(
-        document.getElementById('google-button')!,
-        { theme: 'outline', size: 'large', width: '100%' }
-      );
-    };
+    window.google.accounts.id.initialize({
+      client_id: VITE_GOOGLE_CLIENT_ID,
+      callback: async (res: any) => {
+        try {
+          const response = await axios.post(
+            `${VITE_API_URL}/api/auth/google`,
+            { token: res.credential },
+            { withCredentials: true }
+          );
+          localStorage.setItem('user', JSON.stringify(response.data.user));
+          onAuth(response.data.user);
+          navigate('/app');
+        } catch (err: any) {
+          setServerError(err.response?.data?.message || 'Google sign-in failed');
+        }
+      },
+    });
 
-    return cleanup;
-  }, [onAuth, navigate, VITE_API_URL, VITE_GOOGLE_CLIENT_ID]);
+    window.google.accounts.id.renderButton(
+      document.getElementById('google-button')!,
+      { theme: 'outline', size: 'large', width: '100%' }
+    );
+
+    window.google.accounts.id.prompt();
+  };
+
+  return () => {
+    if (document.body.contains(script)) {
+      document.body.removeChild(script); // ✅ cleanup returns void now
+    }
+  };
+}, [onAuth, navigate, VITE_API_URL, VITE_GOOGLE_CLIENT_ID]);
+
 
   // Request OTP
   const onRequestOtp = async (data: EmailForm) => {
